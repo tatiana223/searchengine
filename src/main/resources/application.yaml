@@ -1,4 +1,21 @@
-# example values
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&allowPublicKeyRetrieval=true
+    username: search_user
+    password: password
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
 
 indexing-settings:
   sites:

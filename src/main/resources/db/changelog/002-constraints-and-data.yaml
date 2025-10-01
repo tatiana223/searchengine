@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2
+      author: student
+      changes:
+        - createIndex:
+            tableName: page
+            indexName: uq_page_site_path
+            unique: true
+            columns:
+              - column:
+                  name: site_id
+              - column:
+                  name: path(255)   # <-- обязательно для TEXT
+
+
+
+        - addUniqueConstraint:
+            tableName: index
+            columnNames: page_id, lemma_id
+            constraintName: uq_index_page_lemma

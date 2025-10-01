@@ -1,0 +1,91 @@
+package searchengine.services.indexing;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import searchengine.config.Site;
+import searchengine.config.SitesList;
+import searchengine.exception.IndexingAlreadyStartedException;
+import searchengine.model.SiteEntity;
+import searchengine.model.Status;
+import searchengine.repository.PageRepository;
+import searchengine.repository.SiteRepository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+public class IndexingServiceImpl implements IndexingService{
+
+    @Autowired
+    private SiteRepository siteRepository;
+    @Autowired
+    private PageRepository pageRepository;
+
+    @Autowired
+    private PageCrawler pageCrawler;
+
+    @Autowired
+    private SitesList sitesList;
+
+    private boolean indexingInProgress = false;
+
+    @Override
+    @Transactional
+    public synchronized void startIndexing() throws IndexingAlreadyStartedException {
+        if (indexingInProgress) {
+            throw new IndexingAlreadyStartedException("Индексация уже запущена");
+        }
+
+        indexingInProgress = true;
+
+        for (Site siteConfig : sitesList.getSites()) {
+            SiteEntity siteEntity = siteRepository.findByUrl(siteConfig.getUrl()).orElse(null);
+
+            if (siteEntity == null) {
+                siteEntity = new SiteEntity();
+                siteEntity.setUrl(siteConfig.getUrl());
+                siteEntity.setName(siteConfig.getName());
+            }
+
+            siteEntity.setStatus(Status.INDEXING);
+            siteEntity.setStatusTime(LocalDateTime.now());
+            siteEntity.setLastError(null);
+            siteRepository.save(siteEntity);
+
+            SiteEntity finalSite = siteEntity;
+
+            // Каждый сайт индексируем в отдельном потоке
+            new Thread(() -> {
+                try {
+                    pageCrawler.crawlSite(finalSite);
+                } catch (Exception e) {
+                    finalSite.setStatus(Status.FAILED);
+                    finalSite.setStatusTime(LocalDateTime.now());
+                    finalSite.setLastError(e.getMessage());
+                    siteRepository.save(finalSite);
+                    e.printStackTrace();
+                }
+            }).start();
+        }
+    }
+
+    @Override
+    @Transactional
+    public synchronized void stopIndexing() {
+        pageCrawler.stop();
+
+        siteRepository.findAll()
+                .stream()
+                .filter(s -> s.getStatus() == Status.INDEXING)
+                .forEach(site -> {
+                    site.setStatus(Status.FAILED);
+                    site.setStatusTime(LocalDateTime.now());
+                    site.setLastError("Индексация остановлена пользователем");
+                    siteRepository.save(site);
+                });
+        indexingInProgress = false;
+    }
+
+
+}

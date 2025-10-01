@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/001-init-tables.yaml
+  - include:
+      file: db/changelog/002-constraints-and-data.yaml
+  - include:
+      file: db/changelog/003-Null.yaml

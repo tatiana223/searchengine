@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 3
+      author: student
+      changes:
+        - addUniqueConstraint:
+            tableName: site
+            columnNames: url
+            constraintName: uq_site_url
