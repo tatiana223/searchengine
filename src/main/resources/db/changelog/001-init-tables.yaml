@@ -104,7 +104,7 @@ databaseChangeLog:
             constraintName: fk_lemma_site
 
         - createTable:
-            tableName: index
+            tableName: index_page
             columns:
               - column:
                   name: id
@@ -123,18 +123,18 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
-                  name: rank
+                  name: rank_value
                   type: FLOAT
                   constraints:
                     nullable: false
         - addForeignKeyConstraint:
-            baseTableName: index
+            baseTableName: index_page
             baseColumnNames: page_id
             referencedTableName: page
             referencedColumnNames: id
             constraintName: fk_index_page
         - addForeignKeyConstraint:
-            baseTableName: index
+            baseTableName: index_page
             baseColumnNames: lemma_id
             referencedTableName: lemma
             referencedColumnNames: id

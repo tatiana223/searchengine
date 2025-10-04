@@ -16,6 +16,6 @@ databaseChangeLog:
 
 
         - addUniqueConstraint:
-            tableName: index
+            tableName: index_page
             columnNames: page_id, lemma_id
             constraintName: uq_index_page_lemma

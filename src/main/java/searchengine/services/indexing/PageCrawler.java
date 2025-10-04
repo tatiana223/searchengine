@@ -8,9 +8,9 @@ import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
-import searchengine.model.PageEntity;
-import searchengine.model.SiteEntity;
-import searchengine.model.Status;
+import searchengine.model.*;
+import searchengine.repository.IndexRepository;
+import searchengine.repository.LemmaRepository;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 
@@ -26,10 +26,15 @@ public class PageCrawler {
     private volatile boolean stopRequested = false;
     @Autowired
     private PageRepository pageRepository;
-
+    @Autowired
+    private LemmaRepository lemmaRepository;
+    @Autowired
+    private IndexRepository indexRepository;
     @Autowired
     private SiteRepository siteRepository;
 
+    @Autowired
+    private LemmaService lemmaService;
     private Set<String> visitedLinks = new HashSet<>();
 
     public void stop() {
@@ -38,7 +43,6 @@ public class PageCrawler {
     }
 
     public void crawlSite(SiteEntity site) {
-        stopRequested = false;
         try {
             crawlPage(site, site.getUrl());
         } finally {
@@ -53,8 +57,13 @@ public class PageCrawler {
         }
     }
 
+    public void crawlSinglePage(SiteEntity site, String url) {
+        crawlPage(site, url);
+    }
+
     private void crawlPage(SiteEntity site, String url) {
         if (stopRequested) {
+            System.out.println("Остановка индексации, выходим: " + url);
             return;
         }
         if (url.matches(".*\\.(jpg|jpeg|png|gif|webp|bmp|svg|pdf|mp4|mp3)$")) {
@@ -66,9 +75,14 @@ public class PageCrawler {
             URI uri = new URI(url);
             String normalizedUrl = uri.normalize().toString();
             if (visitedLinks.contains(normalizedUrl)) {
+                System.out.println("Уже посещали: " + url);
                 return;
             }
             visitedLinks.add(normalizedUrl);
+
+            System.out.println("Загружаем: " + url);
+
+            if (stopRequested) return;
 
             Connection.Response response = Jsoup.connect(normalizedUrl)
                     .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
@@ -81,6 +95,9 @@ public class PageCrawler {
 
             if (statusCode == 200 && response.contentType() != null && response.contentType().contains("text/html")) {
                 doc = Jsoup.parse(response.body(), normalizedUrl);
+                System.out.println("Успешно загружено (" + statusCode + ")");
+            } else {
+                System.out.println("Ошибка загрузки (" + statusCode + ")");
             }
 
             String path = uri.getPath();
@@ -98,11 +115,45 @@ public class PageCrawler {
                 page.setCode(statusCode);
                 page.setContent(doc != null ? doc.outerHtml() : "");
                 pageRepository.save(page);
+                System.out.println("Сохранена страница id=" + page.getId() + " path=" + path);
+
+                if (doc != null) {
+                    String text = lemmaService.cleanHtml(doc.outerHtml());
+                    var lemmas = lemmaService.getLemmas(text);
+                    System.out.println("Найдено лемм: " + lemmas.size());
+
+                    for (var entry : lemmas.entrySet()) {
+                        String lemmaWord = entry.getKey();
+                        int count = entry.getValue();
+                        LemmaEntity lemmaEntity = lemmaRepository.findByLemmaAndSite(lemmaWord, site)
+                                .orElseGet(() -> {
+                                    LemmaEntity newLemma = new LemmaEntity();
+                                    newLemma.setLemma(lemmaWord);
+                                    newLemma.setFrequency(0);
+                                    newLemma.setSite(site);
+                                    return newLemma;
+                                });
+                        lemmaEntity.setFrequency(lemmaEntity.getFrequency() + 1);
+                        lemmaRepository.save(lemmaEntity);
+
+                        if (indexRepository.findByPageAndLemma(page, lemmaEntity).isEmpty()) {
+                            IndexEntity index = new IndexEntity();
+                            index.setPage(page);
+                            index.setLemma(lemmaEntity);
+                            index.setRank(count);
+                            indexRepository.save(index);
+                        }
+                    }
+                }
             }
 
             if (doc != null) {
                 Elements links = doc.select("a[href]");
                 for (Element link : links) {
+                    if (stopRequested) {
+                        System.out.println("Остановка индексации, выходим из рекурсии");
+                        break; // сразу выходим из цикла
+                    }
                     String absUrl = link.absUrl("href");
                     if (absUrl.startsWith(site.getUrl())) {
                         System.out.println("Нашёл ссылку: " + absUrl);
