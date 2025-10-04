@@ -2,15 +2,15 @@ package searchengine.controllers;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.services.StatisticsService;
 import searchengine.services.indexing.IndexingService;
 
 import searchengine.exception.IndexingAlreadyStartedException;
+
+import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api")
@@ -42,6 +42,25 @@ public class ApiController {
     @GetMapping("/stopIndexing")
     public ResponseEntity<?> stopIndexing() {
         indexingService.stopIndexing();
-        return ResponseEntity.ok("{\"result\": true");
+        return ResponseEntity.ok("{\"result\": true}");
+    }
+
+    @PostMapping("/indexPage")
+    public ResponseEntity<Map<String, Object>> indexPage(@RequestParam String url) {
+        try {
+            boolean indexed = indexingService.indexPage(url);
+            if (indexed) {
+                return ResponseEntity.ok(Map.of("result", true));
+            } else {
+                return ResponseEntity.badRequest().body(
+                        Map.of("result", false,
+                                "error", "Данная страница находится за пределами сайтов, указанных в конфиг.файле")
+                );
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("result", false, "error", e.getMessage())
+            );
+        }
     }
 }

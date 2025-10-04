@@ -6,7 +6,7 @@ import lombok.Setter;
 import javax.persistence.*;
 
 @Entity
-@Table(name = "`index`", uniqueConstraints = {@UniqueConstraint(columnNames = {"page_id", "lemma_id"})})
+@Table(name = "index_page", uniqueConstraints = {@UniqueConstraint(columnNames = {"page_id", "lemma_id"})})
 @Getter
 @Setter
 public class IndexEntity {
@@ -23,6 +23,6 @@ public class IndexEntity {
     @JoinColumn(name = "lemma_id", nullable = false)
     private LemmaEntity lemma;
 
-    @Column(nullable = false)
+    @Column(name = "rank_value", nullable = false)
     private float rank;
 }
