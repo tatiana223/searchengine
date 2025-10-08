@@ -21,4 +21,6 @@ indexing-settings:
   sites:
     - url: https://www.lenta.ru
       name: Лента.ру
+    - url: https://skillbox.ru/
+      name: Skillbox
 

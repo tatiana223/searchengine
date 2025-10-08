@@ -12,4 +12,7 @@ public interface IndexRepository extends JpaRepository<IndexEntity, Integer> {
 
     Optional<IndexEntity> findByPageAndLemma(PageEntity page, LemmaEntity lemma);
     List<IndexEntity> findAllByPage(PageEntity page);
+    List<PageEntity> findPagesByLemma(LemmaEntity page);
+    List<IndexEntity> findByLemma(LemmaEntity lemma);
+    List<IndexEntity> findByPageInAndLemmaIn(List<PageEntity> pages, List<LemmaEntity> lemmas);
 }
