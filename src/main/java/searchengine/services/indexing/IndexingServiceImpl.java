@@ -43,28 +43,43 @@ public class IndexingServiceImpl implements IndexingService{
     @Transactional
     public synchronized void startIndexing() throws IndexingAlreadyStartedException {
         if (indexingInProgress) {
+            System.out.println("Блокировка: indexingInProgress = true");
             throw new IndexingAlreadyStartedException("Индексация уже запущена");
         }
 
         indexingInProgress = true;
 
+        pageCrawler.resetStopFlag();
+        System.out.println("Запускаем индексацию для " + sitesList.getSites().size() + " сайтов");
+
         for (Site siteConfig : sitesList.getSites()) {
             SiteEntity siteEntity = siteRepository.findByUrl(siteConfig.getUrl()).orElse(null);
 
-            if (siteEntity == null) {
+            if (siteEntity != null) {
+
+                Integer siteId = siteEntity.getId();
+                indexRepository.deleteBySite(siteId);
+                lemmaRepository.deleteBySite(siteId);
+                pageRepository.deleteBySite(siteId);
+
+                siteEntity.setStatus(Status.INDEXING);
+                siteEntity.setStatusTime(LocalDateTime.now());
+                siteEntity.setLastError(null);
+                siteRepository.save(siteEntity);
+            } else {
+
                 siteEntity = new SiteEntity();
                 siteEntity.setUrl(siteConfig.getUrl());
                 siteEntity.setName(siteConfig.getName());
+                siteEntity.setStatus(Status.INDEXING);
+                siteEntity.setStatusTime(LocalDateTime.now());
+                siteEntity.setLastError(null);
+                siteRepository.save(siteEntity);
             }
 
-            siteEntity.setStatus(Status.INDEXING);
-            siteEntity.setStatusTime(LocalDateTime.now());
-            siteEntity.setLastError(null);
-            siteRepository.save(siteEntity);
 
             SiteEntity finalSite = siteEntity;
 
-            // Каждый сайт индексируем в отдельном потоке
             new Thread(() -> {
                 try {
                     pageCrawler.crawlSite(finalSite);
@@ -102,14 +117,10 @@ public class IndexingServiceImpl implements IndexingService{
         Site siteConfig = sitesList.getSites().stream()
                 .filter(s -> {
                     try {
-
                         URI siteUri = new URI(s.getUrl());
                         URI inputUri = new URI(url);
-
-                        // Сравниваем домены (игнорируя www и протокол)
                         String siteHost = siteUri.getHost().replace("www.", "");
                         String inputHost = inputUri.getHost().replace("www.", "");
-
                         return siteHost.equals(inputHost);
                     } catch (URISyntaxException e) {
                         return false;
@@ -122,52 +133,28 @@ public class IndexingServiceImpl implements IndexingService{
             System.out.println("Страница не принадлежит сайтам из application.yaml");
             return false;
         }
-        System.out.println("Определён сайт: " + siteConfig.getName() + " (" + siteConfig.getUrl() + ")");
 
         SiteEntity siteEntity = siteRepository.findByUrl(siteConfig.getUrl())
                 .orElseGet(() -> {
                     SiteEntity newSite = new SiteEntity();
                     newSite.setUrl(siteConfig.getUrl());
                     newSite.setName(siteConfig.getName());
-                    newSite.setStatus(Status.INDEXING);
+                    newSite.setStatus(Status.INDEXED);
                     newSite.setStatusTime(LocalDateTime.now());
                     siteRepository.save(newSite);
-                    System.out.println("Создан новый сайт в БД: " + newSite.getUrl());
                     return newSite;
                 });
-        URI uri;
+
         try {
-            uri = new URI(url);
+            pageCrawler.indexSinglePageOnly(siteEntity, url);
+
+            System.out.println("=== Индексация одной страницы завершена: " + url);
+            return true;
+
         } catch (Exception e) {
-            throw new RuntimeException("Некорректный  URL: " + url);
+            System.err.println("Ошибка при индексации страницы " + url + ": " + e.getMessage());
+            return false;
         }
-
-        String path = uri.getPath();
-        if (path == null || path.isEmpty()) {
-            path = "/";
-        }
-        if (uri.getQuery() != null) {
-            path += "?" + uri.getQuery();
-        }
-
-        pageRepository.findBySiteAndPath(siteEntity, path).ifPresent(existingPage -> {
-            System.out.println("Страница уже существует, удаляем старую версию: " + existingPage);
-            var indexes = indexRepository.findAllByPage(existingPage);
-            System.out.println("Удаляем индексов: " + indexes.size());
-            for (var idx : indexes) {
-                LemmaEntity lemma = idx.getLemma();
-                lemma.setFrequency(lemma.getFrequency() - 1);
-                lemmaRepository.save(lemma);
-                indexRepository.delete(idx);
-            }
-
-            pageRepository.delete(existingPage);
-            System.out.println("Страница уже существует в БД, удаляем: " + existingPage);
-        });
-        pageCrawler.crawlSinglePage(siteEntity, url);
-        System.out.println("=== Индексация завершена: " + url);
-
-        return true;
     }
 
 

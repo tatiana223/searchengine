@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import searchengine.dto.statistics.StatisticsResponse;
+import searchengine.services.SearchService;
 import searchengine.services.StatisticsService;
 import searchengine.services.indexing.IndexingService;
 
@@ -12,11 +13,13 @@ import searchengine.exception.IndexingAlreadyStartedException;
 import java.util.Map;
 import java.util.Objects;
 
+
 @RestController
 @RequestMapping("/api")
 public class ApiController {
 
     private final StatisticsService statisticsService;
+
 
     public ApiController(StatisticsService statisticsService) {
         this.statisticsService = statisticsService;
@@ -24,6 +27,9 @@ public class ApiController {
 
     @Autowired
     private IndexingService indexingService;
+    @Autowired
+    private SearchService searchService;
+
     @GetMapping("/statistics")
     public ResponseEntity<StatisticsResponse> statistics() {
         return ResponseEntity.ok(statisticsService.getStatistics());
@@ -31,10 +37,12 @@ public class ApiController {
 
     @GetMapping("/startIndexing")
     public ResponseEntity<?> startIndexing() {
+        System.out.println("=== /startIndexing API CALLED ===");
         try {
             indexingService.startIndexing();
             return ResponseEntity.ok("{\"result\": true}");
         } catch (IndexingAlreadyStartedException e) {
+            System.out.println("Ошибка: " + e.getMessage());
             return ResponseEntity.badRequest().body("{\"result\": false, \"error\": \"" + e.getMessage() + "\"}");
         }
     }
@@ -61,6 +69,21 @@ public class ApiController {
             return ResponseEntity.badRequest().body(
                     Map.of("result", false, "error", e.getMessage())
             );
+        }
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<?> search(
+            @RequestParam String query,
+            @RequestParam(required = false) String site,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "20") int limit) {
+
+        try {
+            var result = searchService.search(query, site, offset, limit);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("result", false, "error", e.getMessage()));
         }
     }
 }
