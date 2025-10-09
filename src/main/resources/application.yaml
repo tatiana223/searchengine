@@ -23,4 +23,7 @@ indexing-settings:
       name: Лента.ру
     - url: https://skillbox.ru/
       name: Skillbox
-
+    - url: https://volochek.life/
+      name: Volochek.life
+    - url: https://ipfran.ru/
+      name: Ipfran
