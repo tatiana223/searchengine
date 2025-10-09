@@ -43,28 +43,43 @@ public class IndexingServiceImpl implements IndexingService{
     @Transactional
     public synchronized void startIndexing() throws IndexingAlreadyStartedException {
         if (indexingInProgress) {
+            System.out.println("Блокировка: indexingInProgress = true");
             throw new IndexingAlreadyStartedException("Индексация уже запущена");
         }
 
         indexingInProgress = true;
 
+        pageCrawler.resetStopFlag();
+        System.out.println("Запускаем индексацию для " + sitesList.getSites().size() + " сайтов");
+
         for (Site siteConfig : sitesList.getSites()) {
             SiteEntity siteEntity = siteRepository.findByUrl(siteConfig.getUrl()).orElse(null);
 
-            if (siteEntity == null) {
+            if (siteEntity != null) {
+
+                Integer siteId = siteEntity.getId();
+                indexRepository.deleteBySite(siteId);
+                lemmaRepository.deleteBySite(siteId);
+                pageRepository.deleteBySite(siteId);
+
+                siteEntity.setStatus(Status.INDEXING);
+                siteEntity.setStatusTime(LocalDateTime.now());
+                siteEntity.setLastError(null);
+                siteRepository.save(siteEntity);
+            } else {
+
                 siteEntity = new SiteEntity();
                 siteEntity.setUrl(siteConfig.getUrl());
                 siteEntity.setName(siteConfig.getName());
+                siteEntity.setStatus(Status.INDEXING);
+                siteEntity.setStatusTime(LocalDateTime.now());
+                siteEntity.setLastError(null);
+                siteRepository.save(siteEntity);
             }
 
-            siteEntity.setStatus(Status.INDEXING);
-            siteEntity.setStatusTime(LocalDateTime.now());
-            siteEntity.setLastError(null);
-            siteRepository.save(siteEntity);
 
             SiteEntity finalSite = siteEntity;
 
-            // Каждый сайт индексируем в отдельном потоке
             new Thread(() -> {
                 try {
                     pageCrawler.crawlSite(finalSite);

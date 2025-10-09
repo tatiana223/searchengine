@@ -37,10 +37,12 @@ public class ApiController {
 
     @GetMapping("/startIndexing")
     public ResponseEntity<?> startIndexing() {
+        System.out.println("=== /startIndexing API CALLED ===");
         try {
             indexingService.startIndexing();
             return ResponseEntity.ok("{\"result\": true}");
         } catch (IndexingAlreadyStartedException e) {
+            System.out.println("Ошибка: " + e.getMessage());
             return ResponseEntity.badRequest().body("{\"result\": false, \"error\": \"" + e.getMessage() + "\"}");
         }
     }

@@ -62,6 +62,11 @@ public class PageCrawler {
         crawlPage(site, url);
     }
 
+    public void resetStopFlag() {
+        stopRequested = false;
+        visitedLinks.clear();
+    }
+
     private void crawlPage(SiteEntity site, String url) {
         if (stopRequested) {
             System.out.println("Остановка индексации, выходим: " + url);
@@ -182,7 +187,7 @@ public class PageCrawler {
                     .userAgent("Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6")
                     .referrer("http://www.google.com")
                     .ignoreHttpErrors(true)
-                    .timeout(30000) // Увеличиваем таймаут
+                    .timeout(30000)
                     .execute();
 
             int statusCode = response.statusCode();
@@ -197,7 +202,6 @@ public class PageCrawler {
             Document doc = Jsoup.parse(response.body(), normalizedUrl);
             System.out.println("HTML получен, размер: " + doc.outerHtml().length() + " символов");
 
-            // Проверим заголовок страницы
             String title = doc.title();
             System.out.println("Заголовок страницы: " + title);
 
@@ -213,7 +217,6 @@ public class PageCrawler {
             PageEntity page = pageRepository.findBySiteAndPath(site, path)
                     .orElse(new PageEntity());
 
-            // Обновляем данные страницы
             page.setSite(site);
             page.setPath(path);
             page.setCode(statusCode);
@@ -221,7 +224,6 @@ public class PageCrawler {
             pageRepository.save(page);
             System.out.println("Страница обновлена/создана ID: " + page.getId());
 
-            // ★★★★ ВАЖНО: Удаляем старые индексы перед созданием новых ★★★★
             System.out.println("Удаляем старые индексы...");
             List<IndexEntity> oldIndexes = indexRepository.findAllByPage(page);
             System.out.println("Найдено старых индексов: " + oldIndexes.size());

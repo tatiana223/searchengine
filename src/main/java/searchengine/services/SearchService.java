@@ -39,7 +39,6 @@ public class SearchService {
         }
 
         try {
-            // 1. Лемматизация запроса
             Map<String, Integer> queryLemmasMap = lemmaService.getLemmas(query);
             List<String> queryLemmasList = new ArrayList<>(queryLemmasMap.keySet());
 
@@ -47,47 +46,40 @@ public class SearchService {
                 return Map.of("result", true, "count", 0, "data", List.of());
             }
 
-            // 2. Определяем сайты для поиска
             List<SiteEntity> sites = getSitesForSearch(siteUrl);
             if (sites.isEmpty()) {
                 return Map.of("result", true, "count", 0, "data", List.of());
             }
 
-            // 3. Ищем леммы в базе данных
             List<LemmaEntity> foundLemmas = lemmaRepository.findByLemmaInAndSiteIn(queryLemmasList, sites);
 
             if (foundLemmas.isEmpty()) {
                 return Map.of("result", true, "count", 0, "data", List.of());
             }
 
-            // 4. Фильтруем слишком частые леммы и сортируем
             foundLemmas = filterAndSortLemmas(foundLemmas, sites);
 
             if (foundLemmas.isEmpty()) {
                 return Map.of("result", true, "count", 0, "data", List.of());
             }
 
-            // 5. Алгоритм "сита" для поиска страниц
             List<PageEntity> pages = findPagesWithAllLemmas(foundLemmas);
 
             if (pages.isEmpty()) {
                 return Map.of("result", true, "count", 0, "data", List.of());
             }
 
-            // 6. Расчёт релевантности
             List<SearchResult> searchResults = calculateRelevance(pages, foundLemmas);
 
-            // 7. Применяем пагинацию
             List<SearchResult> paginatedResults = applyPagination(searchResults, offset, limit);
 
-            // 8. Формируем финальный результат
             List<Map<String, Object>> resultData = paginatedResults.stream()
                     .map(this::convertToResultMap)
                     .collect(Collectors.toList());
 
             return Map.of(
                     "result", true,
-                    "count", searchResults.size(), // общее количество без пагинации
+                    "count", searchResults.size(),
                     "data", resultData
             );
 
@@ -108,8 +100,8 @@ public class SearchService {
     private List<LemmaEntity> filterAndSortLemmas(List<LemmaEntity> lemmas, List<SiteEntity> sites) {
         Map<SiteEntity, Long> siteTotalPages = new HashMap<>();
         for (SiteEntity site : sites) {
-            long count = pageRepository.countBySite(site); // получаем long
-            siteTotalPages.put(site, count); // auto-boxing: long -> Long
+            long count = pageRepository.countBySite(site);
+            siteTotalPages.put(site, count);
         }
 
         List<LemmaEntity> filteredLemmas = lemmas.stream()
@@ -132,7 +124,6 @@ public class SearchService {
 
         while (pages.isEmpty() && startIndex < lemmas.size()) {
             LemmaEntity firstUsefulLemma = lemmas.get(startIndex);
-            // Используем исправленный метод
             List<IndexEntity> indexes = indexRepository.findByLemma(firstUsefulLemma);
             pages = indexes.stream()
                     .map(IndexEntity::getPage)
@@ -144,7 +135,6 @@ public class SearchService {
             return List.of();
         }
 
-        // Фильтруем по оставшимся леммам
         for (int i = startIndex; i < lemmas.size() && !pages.isEmpty(); i++) {
             LemmaEntity currentLemma = lemmas.get(i);
             List<PageEntity> pagesWithCurrentLemma = indexRepository.findPagesByLemma(currentLemma);
@@ -155,33 +145,25 @@ public class SearchService {
     }
 
     private List<SearchResult> calculateRelevance(List<PageEntity> pages, List<LemmaEntity> lemmas) {
-        // Получаем все данные об индексах одним запросом
         List<IndexEntity> allIndexes = indexRepository.findByPageInAndLemmaIn(pages, lemmas);
 
-        // Группируем по страницам и суммируем rank
         Map<PageEntity, Double> pageToTotalRank = new HashMap<>();
         for (IndexEntity index : allIndexes) {
             PageEntity page = index.getPage();
             double rank = index.getRank();
             pageToTotalRank.merge(page, rank, Double::sum);
         }
-
-        // Находим максимальную абсолютную релевантность
         double maxRelevance = pageToTotalRank.values().stream()
                 .mapToDouble(Double::doubleValue)
                 .max()
                 .orElse(1.0);
 
-        // Создаем результаты с относительной релевантностью
         List<SearchResult> results = new ArrayList<>();
         for (Map.Entry<PageEntity, Double> entry : pageToTotalRank.entrySet()) {
             double relativeRelevance = entry.getValue() / maxRelevance;
             results.add(new SearchResult(entry.getKey(), relativeRelevance, lemmas));
         }
-
-        // Сортируем по убыванию релевантности
         results.sort(Comparator.comparingDouble(SearchResult::getRelevance).reversed());
-
         return results;
     }
 
@@ -219,15 +201,12 @@ public class SearchService {
     }
 
     private String generateSnippet(String htmlContent, List<LemmaEntity> lemmas) {
-        // Извлекаем чистый текст
         String cleanText = lemmaService.cleanHtml(htmlContent);
 
         if (cleanText.length() <= 250) {
             return highlightLemmas(cleanText, lemmas);
         }
 
-        // Упрощенная реализация - берем начало текста
-        // В реальной системе нужно найти фрагменты с совпадениями
         String snippet = cleanText.substring(0, 250) + "...";
         return highlightLemmas(snippet, lemmas);
     }
@@ -245,7 +224,6 @@ public class SearchService {
         return result;
     }
 
-    // Вспомогательный класс для хранения результатов поиска
     private static class SearchResult {
         private final PageEntity page;
         private final double relevance;
