@@ -22,7 +22,7 @@ public class SiteCrawlerTask extends RecursiveAction {
     private final IndexRepository indexRepository;
     private final LemmaService lemmaService;
     private final Set<String> visitedLinks;
-    private final PageCrawler crawler; // для вызова общей логики сохранения
+    private final PageCrawler crawler;
 
     public SiteCrawlerTask(String url, SiteEntity site, PageRepository pageRepository,
                            LemmaRepository lemmaRepository, IndexRepository indexRepository,
@@ -41,7 +41,6 @@ public class SiteCrawlerTask extends RecursiveAction {
     protected void compute() {
         if (crawler.isStopRequested()) return;
 
-        // Твои проверки на расширения
         if (url.matches(".*\\.(jpg|jpeg|png|gif|webp|bmp|svg|pdf|mp4|mp3)$")) return;
 
         try {
@@ -50,7 +49,6 @@ public class SiteCrawlerTask extends RecursiveAction {
 
             if (!visitedLinks.add(normalizedUrl)) return;
 
-            // Этичная пауза, чтобы сайт не забанил
             Thread.sleep(150);
 
             Connection.Response response = Jsoup.connect(normalizedUrl)
@@ -64,7 +62,6 @@ public class SiteCrawlerTask extends RecursiveAction {
                 doc = Jsoup.parse(response.body(), normalizedUrl);
             }
 
-            // Используем метод из crawler для сохранения страницы и лемм
             crawler.processAndSavePage(site, url, response.statusCode(), doc);
 
             if (doc != null) {
@@ -78,13 +75,13 @@ public class SiteCrawlerTask extends RecursiveAction {
                     if (absUrl.startsWith(site.getUrl()) && !visitedLinks.contains(absUrl)) {
                         SiteCrawlerTask task = new SiteCrawlerTask(absUrl, site, pageRepository,
                                 lemmaRepository, indexRepository, lemmaService, visitedLinks, crawler);
-                        task.fork(); // Запускаем асинхронно
+                        task.fork();
                         subTasks.add(task);
                     }
                 }
 
                 for (SiteCrawlerTask task : subTasks) {
-                    task.join(); // Ждем завершения
+                    task.join();
                 }
             }
 
