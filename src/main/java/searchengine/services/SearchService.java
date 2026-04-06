@@ -119,26 +119,30 @@ public class SearchService {
     }
 
     private List<PageEntity> findPagesWithAllLemmas(List<LemmaEntity> lemmas) {
-        List<PageEntity> pages = new ArrayList<>();
-        int startIndex = 0;
-
-        while (pages.isEmpty() && startIndex < lemmas.size()) {
-            LemmaEntity firstUsefulLemma = lemmas.get(startIndex);
-            List<IndexEntity> indexes = indexRepository.findByLemma(firstUsefulLemma);
-            pages = indexes.stream()
-                    .map(IndexEntity::getPage)
-                    .collect(Collectors.toList());
-            startIndex++;
+        if (lemmas.isEmpty()) {
+            return List.of();
         }
+
+        // Получаем страницы для первой леммы
+        LemmaEntity firstLemma = lemmas.get(0);
+        List<PageEntity> pages = indexRepository.findByLemma(firstLemma).stream()
+                .map(IndexEntity::getPage)
+                .collect(Collectors.toList());
 
         if (pages.isEmpty()) {
             return List.of();
         }
 
-        for (int i = startIndex; i < lemmas.size() && !pages.isEmpty(); i++) {
+        // Фильтруем страницы, оставляя только те, которые содержат все остальные леммы
+        for (int i = 1; i < lemmas.size() && !pages.isEmpty(); i++) {
             LemmaEntity currentLemma = lemmas.get(i);
-            List<PageEntity> pagesWithCurrentLemma = indexRepository.findPagesByLemma(currentLemma);
-            pages.retainAll(pagesWithCurrentLemma);
+            Set<PageEntity> pagesWithCurrentLemma = indexRepository.findByLemma(currentLemma).stream()
+                    .map(IndexEntity::getPage)
+                    .collect(Collectors.toSet());
+
+            pages = pages.stream()
+                    .filter(pagesWithCurrentLemma::contains)
+                    .collect(Collectors.toList());
         }
 
         return pages;
