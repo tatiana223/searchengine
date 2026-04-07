@@ -1,12 +1,13 @@
 package searchengine.services.indexing;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.exception.IndexingAlreadyStartedException;
-import searchengine.model.LemmaEntity;
 import searchengine.model.SiteEntity;
 import searchengine.model.Status;
 import searchengine.repository.IndexRepository;
@@ -17,10 +18,12 @@ import searchengine.repository.SiteRepository;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
-public class IndexingServiceImpl implements IndexingService{
+public class IndexingServiceImpl implements IndexingService {
+
+    private static final Logger log = LoggerFactory.getLogger(IndexingServiceImpl.class);
 
     @Autowired
     private SiteRepository siteRepository;
@@ -37,37 +40,29 @@ public class IndexingServiceImpl implements IndexingService{
     @Autowired
     private SitesList sitesList;
 
-    private boolean indexingInProgress = false;
+    private final AtomicBoolean indexingInProgress = new AtomicBoolean(false);
 
-    @Override
+
     @Transactional
+    @Override
     public synchronized void startIndexing() throws IndexingAlreadyStartedException {
-        if (indexingInProgress) {
-            System.out.println("Блокировка: indexingInProgress = true");
+        if (!indexingInProgress.compareAndSet(false, true)) {
             throw new IndexingAlreadyStartedException("Индексация уже запущена");
         }
 
-        indexingInProgress = true;
-
         pageCrawler.resetStopFlag();
-        System.out.println("Запускаем индексацию для " + sitesList.getSites().size() + " сайтов");
+        log.info("Запускаем индексацию для {} сайтов", sitesList.getSites().size());
 
         for (Site siteConfig : sitesList.getSites()) {
             SiteEntity siteEntity = siteRepository.findByUrl(siteConfig.getUrl()).orElse(null);
 
             if (siteEntity != null) {
 
-                Integer siteId = siteEntity.getId();
-                indexRepository.deleteBySite(siteId);
-                lemmaRepository.deleteBySite(siteId);
-                pageRepository.deleteBySite(siteId);
-
                 siteEntity.setStatus(Status.INDEXING);
                 siteEntity.setStatusTime(LocalDateTime.now());
                 siteEntity.setLastError(null);
                 siteRepository.save(siteEntity);
             } else {
-
                 siteEntity = new SiteEntity();
                 siteEntity.setUrl(siteConfig.getUrl());
                 siteEntity.setName(siteConfig.getName());
@@ -77,26 +72,25 @@ public class IndexingServiceImpl implements IndexingService{
                 siteRepository.save(siteEntity);
             }
 
-
             SiteEntity finalSite = siteEntity;
 
             new Thread(() -> {
                 try {
                     pageCrawler.crawlSite(finalSite);
                 } catch (Exception e) {
+                    log.error("Ошибка при индексации сайта: {}", finalSite.getUrl(), e);
                     finalSite.setStatus(Status.FAILED);
                     finalSite.setStatusTime(LocalDateTime.now());
                     finalSite.setLastError(e.getMessage());
                     siteRepository.save(finalSite);
-                    e.printStackTrace();
                 }
             }).start();
         }
     }
 
     @Override
-    @Transactional
     public synchronized void stopIndexing() {
+        log.info("Остановка индексации по запросу пользователя");
         pageCrawler.stop();
 
         siteRepository.findAll()
@@ -108,11 +102,10 @@ public class IndexingServiceImpl implements IndexingService{
                     site.setLastError("Индексация остановлена пользователем");
                     siteRepository.save(site);
                 });
-        indexingInProgress = false;
+        indexingInProgress.set(false);
     }
 
     @Override
-    @Transactional
     public boolean indexPage(String url) {
         Site siteConfig = sitesList.getSites().stream()
                 .filter(s -> {
@@ -130,32 +123,29 @@ public class IndexingServiceImpl implements IndexingService{
                 .orElse(null);
 
         if (siteConfig == null) {
-            System.out.println("Страница не принадлежит сайтам из application.yaml");
+            log.warn("Страница {} не принадлежит ни одному сайту из конфигурации", url);
             return false;
         }
 
         SiteEntity siteEntity = siteRepository.findByUrl(siteConfig.getUrl())
-                .orElseGet(() -> {
-                    SiteEntity newSite = new SiteEntity();
-                    newSite.setUrl(siteConfig.getUrl());
-                    newSite.setName(siteConfig.getName());
-                    newSite.setStatus(Status.INDEXED);
-                    newSite.setStatusTime(LocalDateTime.now());
-                    siteRepository.save(newSite);
-                    return newSite;
-                });
+                .orElse(null);
+
+        if (siteEntity == null) {
+            siteEntity = new SiteEntity();
+            siteEntity.setUrl(siteConfig.getUrl());
+            siteEntity.setName(siteConfig.getName());
+            siteEntity.setStatus(Status.INDEXING);
+            siteEntity.setStatusTime(LocalDateTime.now());
+            siteEntity = siteRepository.save(siteEntity);
+        }
 
         try {
             pageCrawler.indexSinglePageOnly(siteEntity, url);
-
-            System.out.println("=== Индексация одной страницы завершена: " + url);
+            log.info("Индексация страницы успешно завершена: {}", url);
             return true;
-
         } catch (Exception e) {
-            System.err.println("Ошибка при индексации страницы " + url + ": " + e.getMessage());
+            log.error("Ошибка при индексации страницы {}: {}", url, e.getMessage(), e);
             return false;
         }
     }
-
-
 }

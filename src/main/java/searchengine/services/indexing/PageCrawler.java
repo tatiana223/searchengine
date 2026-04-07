@@ -5,10 +5,12 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import searchengine.model.*;
 import searchengine.repository.*;
 
 import java.net.URI;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -29,6 +31,7 @@ public class PageCrawler {
     public void resetStopFlag() { stopRequested = false; }
     public boolean isStopRequested() { return stopRequested; }
 
+    @Transactional
     public void crawlSite(SiteEntity site) {
         ForkJoinPool pool = new ForkJoinPool();
         Set<String> visitedLinks = Collections.synchronizedSet(new HashSet<>());
@@ -47,8 +50,10 @@ public class PageCrawler {
         }
     }
 
-    // Вынесла логику сохранения в отдельный метод, чтобы оба класса могли его юзать
+
     public void processAndSavePage(SiteEntity site, String url, int statusCode, Document doc) throws Exception {
+        site.setStatusTime(LocalDateTime.now());
+        siteRepository.save(site);
         URI uri = new URI(url);
         String path = (uri.getPath() == null || uri.getPath().isEmpty()) ? "/" : uri.getPath();
         if (uri.getQuery() != null) path += "?" + uri.getQuery();
@@ -173,7 +178,7 @@ public class PageCrawler {
         System.out.println("=== НАЧАЛО indexPageContent ===");
 
         try {
-            System.out.println("Очищаем HTML...");
+            System.out.println("Очищаем HTML");
             String text = lemmaService.cleanHtml(doc.outerHtml());
             System.out.println("Размер очищенного текста: " + text.length() + " символов");
 
